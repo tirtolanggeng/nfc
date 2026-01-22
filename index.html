@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-KTP NFC Database</title>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; padding: 15px; margin: 0; }
+        .container { max-width: 500px; margin: auto; background: white; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); overflow: hidden; }
+        .tabs { display: flex; border-bottom: 2px solid #ddd; }
+        .tab-btn { flex: 1; padding: 15px; border: none; background: #eee; cursor: pointer; font-weight: bold; }
+        .tab-btn.active { background: white; color: #007bff; border-bottom: 3px solid #007bff; }
+        .section { display: none; padding: 20px; }
+        .section.active { display: block; }
+        input, select, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-blue { background: #007bff; color: white; }
+        .btn-green { background: #28a745; color: white; margin-top: 15px; }
+        .result-item { border-bottom: 1px solid #eee; padding: 8px 0; font-size: 14px; }
+        .result-item b { display: inline-block; width: 120px; color: #555; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('check')">VERIFIKASI</button>
+        <button class="tab-btn" onclick="switchTab('register')">REGISTRASI</button>
+    </div>
+
+    <div id="section-check" class="section active">
+        <button class="btn btn-blue" onclick="startNfc('check')">SCAN KTP</button>
+        <div id="statusCheck" style="margin: 10px 0; color: #666;">Silakan scan...</div>
+        <div id="resultArea" style="display:none; background: #f9f9f9; padding: 15px; border-radius: 8px;">
+            <div class="result-item"><b>NIK:</b> <span id="rNik"></span></div>
+            <div class="result-item"><b>Nama:</b> <span id="rNama"></span></div>
+            <div class="result-item"><b>TTL:</b> <span id="rTtl"></span></div>
+            <div class="result-item"><b>Jenis Kelamin:</b> <span id="rJk"></span></div>
+            <div class="result-item"><b>Alamat:</b> <span id="rAlamat"></span></div>
+            <div class="result-item"><b>Agama:</b> <span id="rAgama"></span></div>
+            <div class="result-item"><b>Pekerjaan:</b> <span id="rKerja"></span></div>
+        </div>
+    </div>
+
+    <div id="section-register" class="section">
+        <button class="btn btn-blue" onclick="startNfc('reg')">1. AMBIL UID DARI SCAN</button>
+        <div id="statusReg" style="margin: 10px 0; font-weight: bold;">UID: (Belum ada)</div>
+        
+        <form id="formReg" onsubmit="saveData(event)">
+            <input type="hidden" id="inUid" required>
+            <input type="number" id="inNik" placeholder="NIK (16 digit)" required>
+            <input type="text" id="inNama" placeholder="Nama Lengkap" required>
+            <div style="display:flex; gap:5px;">
+                <input type="text" id="inTempat" placeholder="Tempat Lahir" style="flex:2;">
+                <input type="date" id="inTgl" style="flex:3;">
+            </div>
+            <select id="inJk">
+                <option value="LAKI-LAKI">LAKI-LAKI</option>
+                <option value="PEREMPUAN">PEREMPUAN</option>
+            </select>
+            <textarea id="inAlamat" placeholder="Alamat Lengkap"></textarea>
+            <input type="text" id="inAgama" placeholder="Agama">
+            <select id="inKawin">
+                <option value="BELUM KAWIN">BELUM KAWIN</option>
+                <option value="KAWIN">KAWIN</option>
+                <option value="CERAI HIDUP">CERAI HIDUP</option>
+                <option value="CERAI MATI">CERAI MATI</option>
+            </select>
+            <input type="text" id="inKerja" placeholder="Pekerjaan">
+            
+            <button type="submit" class="btn btn-green" id="btnSave" disabled>2. SIMPAN KE DATABASE</button>
+        </form>
+    </div>
+</div>
+
+<script>
+    const SCRIPT_URL = "URL_GOOGLE_APPS_SCRIPT_ANDA_DI_SINI"; 
+
+    function switchTab(mode) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        event.currentTarget.classList.add('active');
+        document.getElementById('section-' + mode).classList.add('active');
+    }
+
+    async function startNfc(mode) {
+        if (!('NDEFReader' in window)) return alert("NFC tidak didukung!");
+        try {
+            const ndef = new NDEFReader();
+            await ndef.scan();
+            document.getElementById(mode === 'check' ? 'statusCheck' : 'statusReg').innerText = "📡 Tempelkan KTP...";
+
+            ndef.onreading = event => {
+                const uid = event.serialNumber;
+                if (mode === 'check') {
+                    fetchData(uid);
+                } else {
+                    document.getElementById('inUid').value = uid;
+                    document.getElementById('statusReg').innerText = "✅ UID Terkunci: " + uid;
+                    document.getElementById('btnSave').disabled = false;
+                }
+            };
+        } catch (e) { alert("Error: " + e); }
+    }
+
+    async function fetchData(uid) {
+        document.getElementById('statusCheck').innerText = "⌛ Mencari data...";
+        try {
+            const resp = await fetch(SCRIPT_URL, {
+                method: "POST",
+                body: JSON.stringify({ action: "search", uid: uid })
+            });
+            const res = await resp.json();
+            if (res.result === "found") {
+                document.getElementById('statusCheck').innerText = "✅ Data Ditemukan";
+                document.getElementById('resultArea').style.display = "block";
+                document.getElementById('rNik').innerText = res.data.nik;
+                document.getElementById('rNama').innerText = res.data.nama;
+                document.getElementById('rTtl').innerText = res.data.tempatLahir + ", " + res.data.tglLahir;
+                document.getElementById('rJk').innerText = res.data.jk;
+                document.getElementById('rAlamat').innerText = res.data.alamat;
+                document.getElementById('rAgama').innerText = res.data.agama;
+                document.getElementById('rKerja').innerText = res.data.pekerjaan;
+            } else {
+                alert("KTP belum terdaftar di sistem.");
+                document.getElementById('resultArea').style.display = "none";
+            }
+        } catch (e) { alert("Gagal koneksi server."); }
+    }
+
+    async function saveData(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btnSave');
+        btn.disabled = true; btn.innerText = "Proses Menyimpan...";
+
+        const payload = {
+            action: "register",
+            uid: document.getElementById('inUid').value,
+            nik: document.getElementById('inNik').value,
+            nama: document.getElementById('inNama').value,
+            tempatLahir: document.getElementById('inTempat').value,
+            tglLahir: document.getElementById('inTgl').value,
+            jk: document.getElementById('inJk').value,
+            alamat: document.getElementById('inAlamat').value,
+            agama: document.getElementById('inAgama').value,
+            statusKawin: document.getElementById('inKawin').value,
+            pekerjaan: document.getElementById('inKerja').value
+        };
+
+        try {
+            const resp = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(payload) });
+            const res = await resp.json();
+            if (res.result === "success") {
+                alert("Data berhasil disimpan!");
+                document.getElementById('formReg').reset();
+                document.getElementById('statusReg').innerText = "Siap scan kartu baru.";
+            } else { alert("Gagal: " + res.message); }
+        } catch (e) { alert("Gagal koneksi."); }
+        btn.disabled = false; btn.innerText = "2. SIMPAN KE DATABASE";
+    }
+</script>
+</body>
+</html>
